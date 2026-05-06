@@ -1,0 +1,9 @@
+# Copy this file to .env and fill in real values before running the application.
+# Do not commit .env to version control.
+
+DATABASE_URL=postgresql://user:password@host:port/database?sslmode=require
+JWT_SECRET=replace-with-a-random-string-of-at-least-32-characters
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your-email@example.com
+SMTP_PASSWORD=your-smtp-app-password
