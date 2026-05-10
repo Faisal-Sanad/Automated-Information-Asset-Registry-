@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS pending_changes (
     review_comment  TEXT
 );
 
--- Add email and reset-code columns to users
+-- Add email and reset-code columns to users.
+-- (Note: tfa_* columns are used for email-based password-reset codes,
+--  not full two-factor authentication. Naming preserved for compatibility.)
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS email VARCHAR(255),
     ADD COLUMN IF NOT EXISTS tfa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
