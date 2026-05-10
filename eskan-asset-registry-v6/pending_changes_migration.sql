@@ -1,9 +1,6 @@
--- ============================================================
--- Migration: Add pending_changes table and registration table
--- Run in Supabase SQL Editor
--- ============================================================
+-- Migration: add pending_changes table and update users for email and reset codes.
 
--- 1. Pending changes table (maker-checker)
+-- Pending changes table (maker-checker workflow)
 CREATE TABLE IF NOT EXISTS pending_changes (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     asset_id        VARCHAR(50),
@@ -20,7 +17,7 @@ CREATE TABLE IF NOT EXISTS pending_changes (
     review_comment  TEXT
 );
 
--- 2. Add email and 2FA fields to users table
+-- Add email and reset-code columns to users
 ALTER TABLE users
     ADD COLUMN IF NOT EXISTS email VARCHAR(255),
     ADD COLUMN IF NOT EXISTS tfa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
@@ -28,9 +25,6 @@ ALTER TABLE users
     ADD COLUMN IF NOT EXISTS tfa_expires_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS is_approved BOOLEAN NOT NULL DEFAULT TRUE;
 
--- 3. Add VIEW action to audit_log
--- (no schema change needed - action field is VARCHAR, just start inserting VIEW events)
-
--- 4. Update existing admin user with email placeholder
+-- Backfill emails on the seed admin and viewer accounts
 UPDATE users SET email = 'faisal.sanad@outlook.com' WHERE username = 'admin';
 UPDATE users SET email = 'faisalsanad07@gmail.com' WHERE username = 'viewer';
