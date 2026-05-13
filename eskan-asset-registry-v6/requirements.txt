@@ -1,8 +1,0 @@
-flask
-flask-cors
-psycopg2-binary
-openpyxl
-python-dotenv
-bcrypt
-PyJWT
-reportlab

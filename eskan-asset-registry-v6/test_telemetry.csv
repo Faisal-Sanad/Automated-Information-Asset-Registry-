@@ -1,7 +1,0 @@
-asset_id,system_name,data_classification
-ESK-001,Core Banking System,Restricted
-ESK-002,HR Information System,Confidential
-ESK-003,Compliance Document Portal,Internal
-ESK-004,Email System (Microsoft Exchange),Internal
-ESK-005,Network Monitoring System,Restricted
-ESK-006,Unknown Legacy System,Confidential
