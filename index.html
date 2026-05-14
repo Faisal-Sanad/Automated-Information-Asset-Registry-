@@ -901,6 +901,13 @@
           </div>
         </div>
         <div id="apply-result-box" style="display:none;margin:0 20px 16px;padding:12px 16px;border-radius:8px;font-size:13px;background:var(--blue-light);border:1px solid var(--border)"></div>
+        <div class="op-progress" id="clear-progress" style="margin:0 20px 16px">
+          <div class="op-label">
+            <span id="clear-progress-label">Preparing...</span>
+            <span class="op-pct" id="clear-progress-pct">0%</span>
+          </div>
+          <div class="op-track"><div class="op-fill" id="clear-progress-fill"></div></div>
+        </div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Run Date</th><th>Asset ID</th><th>Type</th><th>Proposed Fix</th><th>CSV Value</th><th>Register Value</th><th>Status</th><th>Actions</th></tr></thead>
@@ -2166,14 +2173,20 @@ function renderDashboardTable(data) {
       <td>${classBadge(r.data_classification)}</td>
       <td>${r.data_category}</td>
       <td class="mono">${fmtDate(r.last_review_date)}</td>
-      <td>${scoreBar(r.missing_mandatory_count)}</td>
+      <td>${scoreBar(r.missing_fields)}</td>
       <td>${statusBadge(r.compliance_status)}</td>
       <td>${reviewBadge(r.review_status)}</td>
     </tr>`).join('');
 }
 
-function scoreBar(missing) {
-  const score = Math.round(((9 - parseInt(missing||0)) / 9) * 100);
+function scoreBar(missingFields) {
+  // missingFields is a comma-separated string of field names from the
+  // compliance_dashboard view (e.g. "encryption_at_rest, retention_period"),
+  // or null/empty when all 9 mandatory fields are populated.
+  const missingCount = (missingFields && String(missingFields).trim() !== '')
+    ? String(missingFields).split(',').length
+    : 0;
+  const score = Math.round(((9 - missingCount) / 9) * 100);
   const color = score === 100 ? '#00c6a2' : score >= 70 ? '#f59e0b' : '#ef4444';
   return `<div style="display:flex;align-items:center;gap:6px">
     <div class="score-bar"><div class="score-fill" style="width:${score}%;background:${color}"></div></div>
@@ -3028,6 +3041,33 @@ async function clearResolvedFindings() {
   const btn = event?.currentTarget || document.querySelector('button[onclick="clearResolvedFindings()"]');
   const orig = btn ? btn.innerHTML : '';
   if (btn) { btn.innerHTML = '<span class="loading" style="border-top-color:var(--accent);border-color:rgba(0,0,0,0.15)"></span> Clearing...'; btn.disabled = true; }
+
+  // Show the two-stage progress bar (same pattern as runImport / runReconciliation)
+  const prog = document.getElementById('clear-progress');
+  const fill = document.getElementById('clear-progress-fill');
+  const pct  = document.getElementById('clear-progress-pct');
+  const lbl  = document.getElementById('clear-progress-label');
+  prog.classList.remove('done','error');
+  prog.classList.add('show');
+  fill.style.width = '0%';
+  pct.textContent = '0%';
+  lbl.textContent = 'Locating resolved findings...';
+
+  // Stage 1: quick jump to 15% to signal activity
+  setTimeout(() => { fill.style.width = '15%'; pct.textContent = '15%'; }, 50);
+
+  // Stage 2: crawl from 15% to 85% while the server processes
+  let crawlPct = 15;
+  const crawl = setInterval(() => {
+    if (crawlPct < 85) {
+      crawlPct += 3;
+      fill.style.width = crawlPct + '%';
+      pct.textContent = crawlPct + '%';
+      if (crawlPct > 30 && crawlPct < 55) lbl.textContent = 'Removing resolved entries...';
+      else if (crawlPct >= 55) lbl.textContent = 'Updating findings table...';
+    }
+  }, 250);
+
   try {
     const res = await fetch(`${API}/api/findings/resolved`, {
       method: 'DELETE',
@@ -3035,14 +3075,37 @@ async function clearResolvedFindings() {
       credentials: 'include'
     });
     const data = await res.json();
+
+    // Stage 3: response in, jump to 100% with the real count
+    clearInterval(crawl);
+    fill.style.width = '100%';
+    pct.textContent = '100%';
+
     if (data.success) {
-      showToast(`Cleared ${data.cleared} resolved finding(s).`, 'success');
+      const n = data.cleared || 0;
+      lbl.textContent = `Cleared ${n} resolved finding${n !== 1 ? 's' : ''}`;
+      prog.classList.add('done');
+      showToast(`Cleared ${n} resolved finding(s).`, 'success');
       loadFindings();
     } else {
+      lbl.textContent = data.error || 'Failed to clear findings';
+      prog.classList.add('error');
       showToast(data.error || 'Failed to clear findings.', 'error');
     }
-  } catch(e) { showToast('Failed to clear findings.', 'error'); }
-  finally { if (btn) { btn.innerHTML = orig; btn.disabled = false; } }
+
+    // Fade the bar out after 4 seconds so the table becomes the focus again
+    setTimeout(() => prog.classList.remove('show'), 4000);
+  } catch(e) {
+    clearInterval(crawl);
+    fill.style.width = '100%';
+    pct.textContent = 'Error';
+    lbl.textContent = 'Failed to clear findings';
+    prog.classList.add('error');
+    showToast('Failed to clear findings.', 'error');
+    setTimeout(() => prog.classList.remove('show'), 4000);
+  } finally {
+    if (btn) { btn.innerHTML = orig; btn.disabled = false; }
+  }
 }
 
 function jumpFromFinding(assetId, mode, findingType) {
