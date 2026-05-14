@@ -1661,6 +1661,15 @@ def import_template():
 @login_required
 def add_asset():
     data = request.json
+    # Schema-layer mandatory fields (per thesis MC-02): asset_id, system_name,
+    # data_category, data_classification, data_owner. The other four mandatory
+    # fields (encryption_in_transit, encryption_at_rest, retention_period,
+    # control_mapping) may be left blank; compliance_status flags the record
+    # as Non-Compliant until those are populated.
+    required = ['asset_id', 'system_name', 'data_category', 'data_classification', 'data_owner']
+    missing = [f for f in required if not (data.get(f) or '').strip()]
+    if missing:
+        return jsonify({'error': f"Required field(s) missing: {', '.join(missing)}"}), 400
     classification = data.get('data_classification', '')
     valid_classifications = {'Public', 'Internal', 'Restricted', 'Confidential'}
     if classification not in valid_classifications:
