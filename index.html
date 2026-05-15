@@ -725,7 +725,7 @@
             <div><strong id="trend-stat-avg" style="color:var(--text);font-size:13px">—</strong> avg per run</div>
           </div>
           <div class="card-body" style="padding:8px 16px 16px;position:relative">
-            <canvas id="trend-canvas" style="width:100%;height:240px;display:block"></canvas>
+            <canvas id="trend-canvas" style="width:100%;height:420px;display:block"></canvas></canvas>
             <div id="trend-tooltip" style="position:absolute;pointer-events:none;display:none;background:var(--navy);color:#fff;padding:8px 12px;border-radius:8px;font-size:11px;line-height:1.4;box-shadow:var(--shadow-md);z-index:5;white-space:nowrap;transform:translate(-50%,-110%)"></div>
           </div>
         </div>
@@ -900,14 +900,14 @@
             <button class="btn btn-outline btn-sm admin-only" onclick="clearResolvedFindings()" title="Remove all resolved findings from history">🗑 Clear Resolved</button>
           </div>
         </div>
-        <div id="apply-result-box" style="display:none;margin:0 20px 16px;padding:12px 16px;border-radius:8px;font-size:13px;background:var(--blue-light);border:1px solid var(--border)"></div>
-        <div class="op-progress" id="clear-progress" style="margin:0 20px 16px">
+        <div class="op-progress" id="findings-progress" style="margin:0 20px 16px">
           <div class="op-label">
-            <span id="clear-progress-label">Preparing...</span>
-            <span class="op-pct" id="clear-progress-pct">0%</span>
+            <span id="findings-progress-label">Preparing...</span>
+            <span class="op-pct" id="findings-progress-pct">0%</span>
           </div>
-          <div class="op-track"><div class="op-fill" id="clear-progress-fill"></div></div>
+          <div class="op-track"><div class="op-fill" id="findings-progress-fill"></div></div>
         </div>
+        <div id="apply-result-box" style="display:none;margin:0 20px 16px;padding:12px 16px;border-radius:8px;font-size:13px;background:var(--blue-light);border:1px solid var(--border)"></div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Run Date</th><th>Asset ID</th><th>Type</th><th>Proposed Fix</th><th>CSV Value</th><th>Register Value</th><th>Status</th><th>Actions</th></tr></thead>
@@ -1038,6 +1038,14 @@
           <span class="card-title">User Management</span>
           <span class="text-muted" style="font-size:12px">Manage system users, roles, and account status</span>
         </div>
+        <div class="op-progress" id="users-progress" style="margin:0 20px 16px">
+          <div class="op-label">
+            <span id="users-progress-label">Preparing...</span>
+            <span class="op-pct" id="users-progress-pct">0%</span>
+          </div>
+          <div class="op-track"><div class="op-fill" id="users-progress-fill"></div></div>
+        </div>
+        <div id="user-action-box" style="display:none;margin:0 20px 16px;padding:12px 16px;border-radius:8px;font-size:13px;background:var(--blue-light);border:1px solid var(--border)"></div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -1703,27 +1711,40 @@ async function loadUsers() {
 
 async function toggleUserRole(username, newRole) {
   if (!confirm(`Change ${username} to ${newRole === 'admin' ? 'Admin' : 'User'} role?`)) return;
-  showToast('Updating role...', 'success');
+  const verb = newRole === 'admin' ? 'Promoting' : 'Demoting';
+  const targetLabel = newRole === 'admin' ? 'Admin' : 'User';
+  const progress = startActionProgress('users-progress', 'user-action-box', [
+    { at: 0,  text: `${verb} ${username}...` },
+    { at: 35, text: `Updating role in the database...` },
+    { at: 65, text: `Refreshing user list...` }
+  ]);
+
   const headers = {'Authorization': 'Bearer ' + localStorage.getItem('token'), 'Content-Type': 'application/json'};
   const res = await fetch(`${API}/api/users/${username}/role`, {
     method: 'POST', headers, credentials: 'include',
     body: JSON.stringify({role: newRole})
   }).then(r => r.json()).catch(() => ({error: 'Failed'}));
-  if (res.error) { showToast(res.error, 'error'); return; }
-  showToast(`✓ ${username} is now ${newRole === 'admin' ? 'an Admin' : 'a User'}.`, 'success');
+  if (res.error) { progress.finish(false, res.error); return; }
+  progress.finish(true, `${username} is now ${newRole === 'admin' ? 'an Admin' : 'a User'}.`);
   loadUsers();
 }
 
 async function toggleUserStatus(username, makeActive) {
   if (!confirm(`${makeActive ? 'Activate' : 'Deactivate'} account for ${username}?`)) return;
-  showToast(`${makeActive ? 'Activating' : 'Deactivating'} account...`, 'success');
+  const verb = makeActive ? 'Activating' : 'Deactivating';
+  const progress = startActionProgress('users-progress', 'user-action-box', [
+    { at: 0,  text: `${verb} ${username}...` },
+    { at: 35, text: `Updating account status...` },
+    { at: 65, text: `Refreshing user list...` }
+  ]);
+
   const headers = {'Authorization': 'Bearer ' + localStorage.getItem('token'), 'Content-Type': 'application/json'};
   const res = await fetch(`${API}/api/users/${username}/status`, {
     method: 'POST', headers, credentials: 'include',
     body: JSON.stringify({is_active: makeActive})
   }).then(r => r.json()).catch(() => ({error: 'Failed'}));
-  if (res.error) { showToast(res.error, 'error'); return; }
-  showToast(`✓ Account ${makeActive ? 'activated' : 'deactivated'}.`, 'success');
+  if (res.error) { progress.finish(false, res.error); return; }
+  progress.finish(true, `Account ${makeActive ? 'activated' : 'deactivated'}.`);
   loadUsers();
 }
 
@@ -1990,14 +2011,83 @@ function updateRegPasswordMatch() {
 // ── Delete User ─────────────────────────────────────────────────────────────
 async function deleteUser(username) {
   if (!confirm(`Permanently delete user "${username}"? This cannot be undone and they will be able to re-register.`)) return;
-  showToast('Deleting user...', 'success');
+  const progress = startActionProgress('users-progress', 'user-action-box', [
+    { at: 0,  text: `Deleting ${username}...` },
+    { at: 35, text: `Removing the user account from the database...` },
+    { at: 65, text: `Refreshing user list...` }
+  ]);
+
   const headers = {'Authorization': 'Bearer ' + localStorage.getItem('token'), 'Content-Type': 'application/json'};
   const res = await fetch(`${API}/api/users/${username}/delete`, {
     method: 'DELETE', headers, credentials: 'include'
   }).then(r => r.json()).catch(() => ({error: 'Failed'}));
-  if (res.error) { showToast(res.error, 'error'); return; }
-  showToast(`✓ User "${username}" deleted.`, 'success');
+  if (res.error) { progress.finish(false, res.error); return; }
+  progress.finish(true, `User "${username}" deleted.`);
   loadUsers();
+}
+
+// ── Action progress bar helper (Clear Resolved, user management) ───────────
+// Natural-feeling progress: jumps to 30%, smoothly decelerates toward 90%
+// while request is in flight, snaps to 100% on completion.
+// Bar persists at 100% until the next action.
+function startActionProgress(progressId, resultBoxId, statusLabels) {
+  const prog = document.getElementById(progressId);
+  const fill = document.getElementById(progressId + '-fill');
+  const pct  = document.getElementById(progressId + '-pct');
+  const lbl  = document.getElementById(progressId + '-label');
+  const box  = document.getElementById(resultBoxId);
+  if (!prog || !fill || !pct || !lbl) return { finish: () => {} };
+
+  // Hide previous result, reset bar
+  if (box) box.style.display = 'none';
+  prog.classList.remove('done', 'error');
+  prog.classList.add('show');
+
+  // Snap to 0% with no transition (kills any in-flight animation from previous run)
+  fill.style.transition = 'none';
+  fill.style.width = '0%';
+  pct.textContent = '0%';
+  lbl.textContent = statusLabels[0]?.text || 'Working...';
+
+  // Wait for two animation frames before enabling transition + burst
+  // (one to apply the reset, one to re-enable transition cleanly)
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      fill.style.transition = 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+      fill.style.width = '30%';
+      pct.textContent = '30%';
+    });
+  });
+
+  // Then exponential decay toward 90%: each tick closes part of the remaining gap.
+  // Decay coefficient 0.15 means we close 15% of the gap each tick.
+  // Variable interval (180-260ms) so it doesn't feel robotic.
+  let currentPct = 30;
+  const target = 90;
+  let stopped = false;
+  function nextTick() {
+    if (stopped) return;
+    const gap = target - currentPct;
+    if (gap > 0.5) {
+      currentPct += gap * 0.15;
+      const display = Math.round(currentPct);
+      fill.style.width = display + '%';
+      pct.textContent = display + '%';
+    }
+    const nextDelay = 180 + Math.random() * 80;
+    setTimeout(nextTick, nextDelay);
+  }
+  setTimeout(nextTick, 250);
+
+  return {
+    finish: (success, message) => {
+      stopped = true;
+      fill.style.width = '100%';
+      pct.textContent = success ? '100%' : 'Error';
+      lbl.textContent = message;
+      prog.classList.add(success ? 'done' : 'error');
+    }
+  };
 }
 
 // ── Button loading helpers ──────────────────────────────────────────────────
@@ -2173,20 +2263,14 @@ function renderDashboardTable(data) {
       <td>${classBadge(r.data_classification)}</td>
       <td>${r.data_category}</td>
       <td class="mono">${fmtDate(r.last_review_date)}</td>
-      <td>${scoreBar(r.missing_fields)}</td>
+      <td>${scoreBar(r.missing_mandatory_count)}</td>
       <td>${statusBadge(r.compliance_status)}</td>
       <td>${reviewBadge(r.review_status)}</td>
     </tr>`).join('');
 }
 
-function scoreBar(missingFields) {
-  // missingFields is a comma-separated string of field names from the
-  // compliance_dashboard view (e.g. "encryption_at_rest, retention_period"),
-  // or null/empty when all 9 mandatory fields are populated.
-  const missingCount = (missingFields && String(missingFields).trim() !== '')
-    ? String(missingFields).split(',').length
-    : 0;
-  const score = Math.round(((9 - missingCount) / 9) * 100);
+function scoreBar(missing) {
+  const score = Math.round(((9 - parseInt(missing||0)) / 9) * 100);
   const color = score === 100 ? '#00c6a2' : score >= 70 ? '#f59e0b' : '#ef4444';
   return `<div style="display:flex;align-items:center;gap:6px">
     <div class="score-bar"><div class="score-fill" style="width:${score}%;background:${color}"></div></div>
@@ -3040,33 +3124,13 @@ async function clearResolvedFindings() {
   if (!confirm('Remove all resolved findings from history?\n\nThis permanently deletes resolved records. Open findings are kept.')) return;
   const btn = event?.currentTarget || document.querySelector('button[onclick="clearResolvedFindings()"]');
   const orig = btn ? btn.innerHTML : '';
+
+  const progress = startActionProgress('findings-progress', 'apply-result-box', [
+    { at: 0,  text: 'Locating resolved findings...' },
+    { at: 35, text: 'Deleting records from the database...' },
+    { at: 65, text: 'Updating findings table...' }
+  ]);
   if (btn) { btn.innerHTML = '<span class="loading" style="border-top-color:var(--accent);border-color:rgba(0,0,0,0.15)"></span> Clearing...'; btn.disabled = true; }
-
-  // Show the two-stage progress bar (same pattern as runImport / runReconciliation)
-  const prog = document.getElementById('clear-progress');
-  const fill = document.getElementById('clear-progress-fill');
-  const pct  = document.getElementById('clear-progress-pct');
-  const lbl  = document.getElementById('clear-progress-label');
-  prog.classList.remove('done','error');
-  prog.classList.add('show');
-  fill.style.width = '0%';
-  pct.textContent = '0%';
-  lbl.textContent = 'Locating resolved findings...';
-
-  // Stage 1: quick jump to 15% to signal activity
-  setTimeout(() => { fill.style.width = '15%'; pct.textContent = '15%'; }, 50);
-
-  // Stage 2: crawl from 15% to 85% while the server processes
-  let crawlPct = 15;
-  const crawl = setInterval(() => {
-    if (crawlPct < 85) {
-      crawlPct += 3;
-      fill.style.width = crawlPct + '%';
-      pct.textContent = crawlPct + '%';
-      if (crawlPct > 30 && crawlPct < 55) lbl.textContent = 'Removing resolved entries...';
-      else if (crawlPct >= 55) lbl.textContent = 'Updating findings table...';
-    }
-  }, 250);
 
   try {
     const res = await fetch(`${API}/api/findings/resolved`, {
@@ -3075,37 +3139,16 @@ async function clearResolvedFindings() {
       credentials: 'include'
     });
     const data = await res.json();
-
-    // Stage 3: response in, jump to 100% with the real count
-    clearInterval(crawl);
-    fill.style.width = '100%';
-    pct.textContent = '100%';
-
     if (data.success) {
-      const n = data.cleared || 0;
-      lbl.textContent = `Cleared ${n} resolved finding${n !== 1 ? 's' : ''}`;
-      prog.classList.add('done');
-      showToast(`Cleared ${n} resolved finding(s).`, 'success');
+      progress.finish(true, `Cleared ${data.cleared} resolved finding(s).`);
       loadFindings();
     } else {
-      lbl.textContent = data.error || 'Failed to clear findings';
-      prog.classList.add('error');
-      showToast(data.error || 'Failed to clear findings.', 'error');
+      progress.finish(false, data.error || 'Failed to clear findings.');
     }
-
-    // Fade the bar out after 4 seconds so the table becomes the focus again
-    setTimeout(() => prog.classList.remove('show'), 4000);
   } catch(e) {
-    clearInterval(crawl);
-    fill.style.width = '100%';
-    pct.textContent = 'Error';
-    lbl.textContent = 'Failed to clear findings';
-    prog.classList.add('error');
-    showToast('Failed to clear findings.', 'error');
-    setTimeout(() => prog.classList.remove('show'), 4000);
-  } finally {
-    if (btn) { btn.innerHTML = orig; btn.disabled = false; }
+    progress.finish(false, 'Failed to clear findings.');
   }
+  finally { if (btn) { btn.innerHTML = orig; btn.disabled = false; } }
 }
 
 function jumpFromFinding(assetId, mode, findingType) {
